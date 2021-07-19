@@ -1,0 +1,14 @@
+[proxy]
+%{ for index, ip in proxy ~}
+proxy${index} ansible_host=${ip}
+%{ endfor ~}
+[app]
+%{ for index, ip in app ~}
+app${index} ansible_host=${ip}
+%{ endfor ~}
+[db]
+%{ for index, ip in db ~}
+db${index} ansible_host=${ip}
+%{ endfor ~}
+[db:vars]
+ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyCommand="ssh -W %h:%p -q bastion"'
