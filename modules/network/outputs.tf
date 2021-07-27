@@ -7,32 +7,18 @@ output "vpc_id" {
 # Subnets
 output "private_subnets" {
   description = "List of IDs of private subnets"
-  value       = [aws_subnet.private1.id, aws_subnet.private2.id]
+    value       = tomap({
+    for index, subnet in aws_subnet.private:
+          index => subnet.id
+  })
 }
 
 output "public_subnets" {
   description = "List of IDs of public subnets"
-  value       = [aws_subnet.public1.id, aws_subnet.public2.id]
-}
-
-output "private_subnet1" {
-  description = "A reference to the private subnet in the 1st Availability Zone"
-  value       = aws_subnet.private1.id
-}
-
-output "private_subnet2" {
-  description = "A reference to the private subnet in the 2nd Availability Zone"
-  value       = aws_subnet.private2.id
-}
-
-output "public_subnet1" {
-  description = "A reference to the public subnet in the 1st Availability Zone"
-  value       = aws_subnet.public1.id
-}
-
-output "public_subnet2" {
-  description = "A reference to the public subnet in the 2nd Availability Zone"
-  value       = aws_subnet.public2.id
+  value       = tomap({
+    for index, subnet in aws_subnet.public:
+          index => subnet.id
+  })
 }
 
 # Security Groups

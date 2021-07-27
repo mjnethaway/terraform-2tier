@@ -4,19 +4,6 @@
 
 resource "aws_vpc" "default" {
   cidr_block = "10.0.0.0/16"
-  tags = "${var.default_tags}"
-}
-
-################################################################################
-# AVAILABILITY ZONES
-################################################################################
-
-data "aws_availability_zone" "az1" {
-  name = "${var.aws_region}a"
-}
-
-data "aws_availability_zone" "az2" {
-  name = "${var.aws_region}b"
 }
 
 ################################################################################
@@ -24,32 +11,29 @@ data "aws_availability_zone" "az2" {
 ################################################################################
 
 # These subnets are for machines that need to be publicly accessible.
-resource "aws_subnet" "public1" {
-  vpc_id                  = "${aws_vpc.default.id}"
-  cidr_block              = "10.0.10.0/24"
+resource "aws_subnet" "public" {
+  for_each                = var.aws_availability_zones
+  vpc_id                  = aws_vpc.default.id
+  cidr_block              = each.value.public_subnet
+  availability_zone       = each.value.az
   map_public_ip_on_launch = true
-  tags = "${var.default_tags}"
-}
 
-resource "aws_subnet" "public2" {
-  vpc_id                  = "${aws_vpc.default.id}"
-  cidr_block              = "10.0.11.0/24"
-  map_public_ip_on_launch = true
-  tags = "${var.default_tags}"
+  tags = {
+    Name = "subnet-public-${split("-", each.value.az)[2]}"
+  }
 }
 
 # These subnets are for machines that should not be publicly accessible.
-resource "aws_subnet" "private1" {
-  vpc_id                  = "${aws_vpc.default.id}"
-  cidr_block              = "10.0.20.0/24"
+resource "aws_subnet" "private" {
+  for_each                = var.aws_availability_zones
+  vpc_id                  = aws_vpc.default.id
+  cidr_block              = each.value.private_subnet
+  availability_zone       = each.value.az
   map_public_ip_on_launch = false
-  tags = "${var.default_tags}"
-}
-resource "aws_subnet" "private2" {
-  vpc_id                  = "${aws_vpc.default.id}"
-  cidr_block              = "10.0.21.0/24"
-  map_public_ip_on_launch = false
-  tags = "${var.default_tags}"
+
+  tags = {
+    Name = "subnet-private-${split("-", each.value.az)[2]}"
+  }
 }
 
 ################################################################################
@@ -58,29 +42,27 @@ resource "aws_subnet" "private2" {
 
 resource "aws_internet_gateway" "default" {
   vpc_id = "${aws_vpc.default.id}"
-  tags = "${var.default_tags}"
 }
 
-resource "aws_eip" "eip1" {
+resource "aws_eip" "eip" {
+  for_each = aws_subnet.private
   vpc = true
+
+  tags = {
+    Name = "eip-${split("-", each.value.availability_zone)[2]}"
+  }
 }
 
-resource "aws_eip" "eip2" {
-  vpc = true
-}
-
-resource "aws_nat_gateway" "ngw1" {
-  allocation_id = "${aws_eip.eip1.id}"
-  subnet_id     = "${aws_subnet.private1.id}"
+resource "aws_nat_gateway" "ngw" {
+  for_each = aws_subnet.private
+  allocation_id = "${aws_eip.eip[each.key].id}"
+  subnet_id     = "${aws_subnet.private[each.key].id}"
 
   depends_on = [aws_internet_gateway.default]
-}
 
-resource "aws_nat_gateway" "ngw2" {
-  allocation_id = "${aws_eip.eip2.id}"
-  subnet_id     = "${aws_subnet.private2.id}"
-
-  depends_on = [aws_internet_gateway.default]
+  tags = {
+    Name = "ngw-${split("-", each.value.availability_zone)[2]}"
+  }
 }
 
 ################################################################################
@@ -94,49 +76,35 @@ resource "aws_route_table" "public" {
     cidr_block = "0.0.0.0/0"
     gateway_id = "${aws_internet_gateway.default.id}"
   }
-  tags = "${var.default_tags}"
 }
 
 # The route table for the private network goes through the internet gateway with NAT
-resource "aws_route_table" "private1" {
+resource "aws_route_table" "private" {
+  for_each = aws_subnet.private
   vpc_id = "${aws_vpc.default.id}"
   route {
     cidr_block = "0.0.0.0/0"
-    gateway_id = "${aws_nat_gateway.ngw1.id}"
+    gateway_id = "${aws_nat_gateway.ngw[each.key].id}"
   }
-  tags = "${var.default_tags}"
-}
 
-resource "aws_route_table" "private2" {
-  vpc_id = "${aws_vpc.default.id}"
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = "${aws_nat_gateway.ngw2.id}"
+  tags = {
+    Name = "rt-private-${split("-", each.value.availability_zone)[2]}"
   }
-  tags = "${var.default_tags}"
 }
 
 # Associate the route tables to their respective subnets
-
-resource "aws_route_table_association" "public1" {
-  subnet_id      = "${aws_subnet.public1.id}"
+resource "aws_route_table_association" "public" {
+  for_each = aws_subnet.public
+  subnet_id      = each.value.id
   route_table_id = "${aws_route_table.public.id}"
 }
 
-resource "aws_route_table_association" "public2" {
-  subnet_id      = "${aws_subnet.public2.id}"
-  route_table_id = "${aws_route_table.public.id}"
+resource "aws_route_table_association" "private" {
+  for_each = aws_subnet.private
+  subnet_id      = "${aws_subnet.private[each.key].id}"
+  route_table_id = "${aws_route_table.private[each.key].id}"
 }
 
-resource "aws_route_table_association" "private1" {
-  subnet_id      = "${aws_subnet.private1.id}"
-  route_table_id = "${aws_route_table.private1.id}"
-}
-
-resource "aws_route_table_association" "private2" {
-  subnet_id      = "${aws_subnet.private2.id}"
-  route_table_id = "${aws_route_table.private2.id}"
-}
 
 ################################################################################
 # SECURITY GROUPS
@@ -163,8 +131,6 @@ resource "aws_security_group" "public" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
-
-  tags = "${var.default_tags}"
 }
 
 # This security group is for the private subnet, which is not publically accessible
@@ -189,5 +155,4 @@ resource "aws_security_group" "private" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  tags = "${var.default_tags}"
 }

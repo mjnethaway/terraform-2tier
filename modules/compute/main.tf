@@ -25,7 +25,7 @@ data "aws_ami" "amazon" {
 resource "aws_instance" "app" {
   count = var.app_count
 
-  subnet_id = "${element(var.public_subnets,count.index)}"
+  subnet_id = var.public_subnets[count.index % length(var.public_subnets)]
   ami = data.aws_ami.amazon.id
   vpc_security_group_ids = [aws_security_group.app.id]
 
@@ -44,10 +44,11 @@ resource "aws_instance" "app" {
   }
 }
 
+
 resource "aws_instance" "db" {
   count = var.db_count
 
-  subnet_id = "${element(var.private_subnets,count.index)}"
+  subnet_id = var.private_subnets[count.index % length(var.private_subnets)]
   ami = data.aws_ami.amazon.id
   vpc_security_group_ids = [aws_security_group.db.id]
 
@@ -69,7 +70,7 @@ resource "aws_instance" "db" {
 resource "aws_instance" "proxy" {
   count = var.proxy_count
 
-  subnet_id = "${element(var.public_subnets,count.index)}"
+  subnet_id = var.public_subnets[count.index % length(var.public_subnets)]
   ami = data.aws_ami.amazon.id
   vpc_security_group_ids = [aws_security_group.proxy.id]
 
